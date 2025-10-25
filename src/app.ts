@@ -1,13 +1,20 @@
-import express, { json } from 'express';
+import { INestApplication } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { json } from 'express';
 import helmet from 'helmet';
 import httpLogger from 'pino-http';
 
+import { AppModule } from './app.module';
 import { logger } from './lib/logger';
-import routes from './routes';
 
-export function createApp() {
-  const app = express();
+// 构建 Nest 应用：挂载安全头、JSON 解析、请求日志等中间件
+export async function createApp(): Promise<INestApplication> {
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true
+  });
 
+  app.useLogger(false);
+  app.enableShutdownHooks();
   app.use(
     helmet({
       contentSecurityPolicy: false
@@ -24,12 +31,6 @@ export function createApp() {
       }
     })
   );
-
-  app.use('/api', routes);
-
-  app.use((_req, res) => {
-    res.status(404).json({ error: '未找到请求资源' });
-  });
 
   return app;
 }

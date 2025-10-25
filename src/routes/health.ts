@@ -1,14 +1,14 @@
-import type { Request, Response, Router } from 'express';
-import { Router as createRouter } from 'express';
+import { Controller, Get } from '@nestjs/common';
 
-const router: Router = createRouter();
-
-router.get('/health', (_req: Request, res: Response) => {
-  res.json({
-    status: 'ok',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
-});
-
-export default router;
+// 提供基础健康检查，供部署环境快速探活
+@Controller()
+export class HealthController {
+  @Get('health')
+  check() {
+    return {
+      status: 'ok',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString()
+    };
+  }
+}

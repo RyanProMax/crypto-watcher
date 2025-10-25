@@ -1,12 +1,8 @@
-import type { Router } from 'express';
-import { Router as createRouter } from 'express';
+import { AccountsController } from './accounts';
+import { HealthController } from './health';
+import { WatchersController } from './watchers';
 
-import healthRouter from './health';
-import watchersRouter from './watchers';
+// 聚合所有 HTTP 控制器，供 NestJS 模块装配
+const routes = [AccountsController, HealthController, WatchersController] as const;
 
-const router: Router = createRouter();
-
-router.use('/', healthRouter);
-router.use('/watchers', watchersRouter);
-
-export default router;
+export default routes;

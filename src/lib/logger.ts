@@ -2,6 +2,7 @@ import createPino from 'pino';
 
 import { env } from '../config/env';
 
+// 项目统一日志出口，根据环境配置输出 JSON 或本地调试格式
 export const logger = createPino({
   name: 'crypto-watcher',
   level: env.LOG_LEVEL,

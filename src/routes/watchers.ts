@@ -1,13 +1,24 @@
-import type { Request, Response } from 'express';
-import { Router } from 'express';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpException,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  Patch,
+  Post
+} from '@nestjs/common';
 import { z } from 'zod';
 
 import { logger } from '../lib/logger';
-import { fetchSpotPrice } from '../services/priceService';
-import { watcherRegistry } from '../services/watcherRegistry';
+import { PriceService } from '../services/priceService';
+import { WatcherRegistry } from '../services/watcherRegistry';
 
-const router = Router();
-
+// 价格监控配置接口：负责创建、查询、更新和删除本地监控规则
 const createWatcherSchema = z.object({
   symbol: z.string().min(1, 'symbol 不能为空'),
   exchange: z.string().min(1, 'exchange 不能为空'),
@@ -27,68 +38,80 @@ const updateWatcherSchema = z
     message: '至少提供一个可更新字段'
   });
 
-router.get('/', (_req: Request, res: Response) => {
-  return res.json({ data: watcherRegistry.list() });
-});
+@Controller('watchers')
+export class WatchersController {
+  constructor(
+    private readonly watcherRegistry: WatcherRegistry,
+    private readonly priceService: PriceService
+  ) {}
 
-router.get('/:id', (req: Request, res: Response) => {
-  const watcher = watcherRegistry.get(req.params.id);
-  if (!watcher) {
-    return res.status(404).json({ error: '监控配置不存在' });
+  @Get()
+  list() {
+    return { data: this.watcherRegistry.list() };
   }
 
-  return res.json({ data: watcher });
-});
+  @Get(':id')
+  get(@Param('id') id: string) {
+    const watcher = this.watcherRegistry.get(id);
+    if (!watcher) {
+      throw new NotFoundException('监控配置不存在');
+    }
 
-router.post('/', (req: Request, res: Response) => {
-  const parseResult = createWatcherSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: parseResult.error.format() });
+    return { data: watcher };
   }
 
-  const watcher = watcherRegistry.create(parseResult.data);
-  return res.status(201).json({ data: watcher });
-});
+  @Post()
+  create(@Body() body: unknown) {
+    const parseResult = createWatcherSchema.safeParse(body);
+    if (!parseResult.success) {
+      throw new BadRequestException(parseResult.error.format());
+    }
 
-router.patch('/:id', (req: Request, res: Response) => {
-  const parseResult = updateWatcherSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: parseResult.error.format() });
+    const watcher = this.watcherRegistry.create(parseResult.data);
+    return { data: watcher };
   }
 
-  const watcher = watcherRegistry.update(req.params.id, parseResult.data);
-  if (!watcher) {
-    return res.status(404).json({ error: '监控配置不存在' });
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() body: unknown) {
+    const parseResult = updateWatcherSchema.safeParse(body);
+    if (!parseResult.success) {
+      throw new BadRequestException(parseResult.error.format());
+    }
+
+    const watcher = this.watcherRegistry.update(id, parseResult.data);
+    if (!watcher) {
+      throw new NotFoundException('监控配置不存在');
+    }
+
+    return { data: watcher };
   }
 
-  return res.json({ data: watcher });
-});
-
-router.delete('/:id', (req: Request, res: Response) => {
-  const removed = watcherRegistry.remove(req.params.id);
-  if (!removed) {
-    return res.status(404).json({ error: '监控配置不存在' });
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@Param('id') id: string) {
+    const removed = this.watcherRegistry.remove(id);
+    if (!removed) {
+      throw new NotFoundException('监控配置不存在');
+    }
   }
 
-  return res.status(204).send();
-});
+  // 为特定监控规则取实时行情，便于前端确认阈值
+  @Get(':id/price')
+  async getPrice(@Param('id') id: string) {
+    const watcher = this.watcherRegistry.get(id);
+    if (!watcher) {
+      throw new NotFoundException('监控配置不存在');
+    }
 
-router.get('/:id/price', async (req: Request, res: Response) => {
-  const watcher = watcherRegistry.get(req.params.id);
-  if (!watcher) {
-    return res.status(404).json({ error: '监控配置不存在' });
+    try {
+      const quote = await this.priceService.fetchSpotPrice(watcher.symbol);
+      return { data: quote };
+    } catch (error) {
+      logger.error(
+        { err: error instanceof Error ? error.message : error, watcherId: watcher.id },
+        '获取实时行情失败'
+      );
+      throw new HttpException('行情服务暂不可用', HttpStatus.BAD_GATEWAY);
+    }
   }
-
-  try {
-    const quote = await fetchSpotPrice(watcher.symbol);
-    return res.json({ data: quote });
-  } catch (error) {
-    logger.error(
-      { err: error instanceof Error ? error.message : error, watcherId: watcher.id },
-      '获取实时行情失败'
-    );
-    return res.status(502).json({ error: '行情服务暂不可用' });
-  }
-});
-
-export default router;
+}
