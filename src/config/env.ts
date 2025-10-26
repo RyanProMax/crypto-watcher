@@ -17,6 +17,12 @@ const zodObjectRule = {
   LOG_LEVEL: z
     .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'])
     .default('info'),
+  EXCHANGE_HTTP_TIMEOUT_MS: z
+    .coerce.number()
+    .int()
+    .positive()
+    .default(10000),
+  EXCHANGE_HTTP_PROXY: z.string().optional(),
   COINMARKETCAP_API_KEY: z.string().optional(),
   COINBASE_API_KEY: z.string().optional(),
   ALERT_WEBHOOK_URL: z.string().url().optional(),

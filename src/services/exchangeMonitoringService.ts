@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import ccxt from 'ccxt';
 import type { Exchange } from 'ccxt';
 
+import { env } from '../config/env';
 import { findExchangeAccount } from '../config/exchangeAccounts';
 import { logger } from '../lib/logger';
 
@@ -44,7 +45,9 @@ export class ExchangeMonitoringService {
     // 统一入口：命中缓存的 ccxt 客户端并对不支持的交易所方法抛出业务型错误
     const client = this.getOrCreateClient(accountId);
 
-    if (typeof client.fetchTransactions !== 'function') {
+    const supportsFetchTransactions =
+      typeof client.fetchTransactions === 'function' && client.has?.fetchTransactions !== false;
+    if (!supportsFetchTransactions) {
       throw new OperationNotSupportedError('fetchTransactions', client.id);
     }
 
@@ -64,6 +67,9 @@ export class ExchangeMonitoringService {
         },
         '获取账户交易记录失败'
       );
+      if (error instanceof ccxt.NotSupported) {
+        throw new OperationNotSupportedError('fetchTransactions', client.id);
+      }
       throw error;
     }
   }
@@ -72,7 +78,9 @@ export class ExchangeMonitoringService {
     // 支持按符号过滤仓位，缺省情况下查询全部仓位
     const client = this.getOrCreateClient(accountId);
 
-    if (typeof client.fetchPositions !== 'function') {
+    const supportsFetchPositions =
+      typeof client.fetchPositions === 'function' && client.has?.fetchPositions !== false;
+    if (!supportsFetchPositions) {
       throw new OperationNotSupportedError('fetchPositions', client.id);
     }
 
@@ -90,6 +98,9 @@ export class ExchangeMonitoringService {
         },
         '获取账户仓位失败'
       );
+      if (error instanceof ccxt.NotSupported) {
+        throw new OperationNotSupportedError('fetchPositions', client.id);
+      }
       throw error;
     }
   }
@@ -98,7 +109,9 @@ export class ExchangeMonitoringService {
     // 暴露当前委托列表查询，用于投研监控或仓位复核
     const client = this.getOrCreateClient(accountId);
 
-    if (typeof client.fetchOpenOrders !== 'function') {
+    const supportsFetchOpenOrders =
+      typeof client.fetchOpenOrders === 'function' && client.has?.fetchOpenOrders !== false;
+    if (!supportsFetchOpenOrders) {
       throw new OperationNotSupportedError('fetchOpenOrders', client.id);
     }
 
@@ -114,6 +127,9 @@ export class ExchangeMonitoringService {
         },
         '获取账户当前委托失败'
       );
+      if (error instanceof ccxt.NotSupported) {
+        throw new OperationNotSupportedError('fetchOpenOrders', client.id);
+      }
       throw error;
     }
   }
@@ -130,16 +146,23 @@ export class ExchangeMonitoringService {
     }
 
     const ExchangeCtor = this.resolveExchangeCtor(account.exchange);
-    const instance = new ExchangeCtor({
+    const instanceConfig: Record<string, unknown> = {
       apiKey: account.apiKey,
       secret: account.secret,
       password: account.password,
       uid: account.uid,
+      timeout: env.EXCHANGE_HTTP_TIMEOUT_MS,
       enableRateLimit: true,
       options: {
         adjustForTimeDifference: true
       }
-    });
+    };
+
+    if (env.EXCHANGE_HTTP_PROXY) {
+      instanceConfig.httpProxy = env.EXCHANGE_HTTP_PROXY;
+    }
+
+    const instance = new ExchangeCtor(instanceConfig);
 
     this.clientCache.set(accountId, instance);
     logger.debug({ accountId }, '已创建交易所客户端实例');
